@@ -1,0 +1,49 @@
+name: Deploy wp-content to VPS
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "${{ secrets.VPS_PORT }}" "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Deploy wp-content with rsync
+        run: |
+          rsync -az \
+            --exclude='.git/' \
+            --exclude='uploads/' \
+            --exclude='cache/' \
+            --exclude='upgrade/' \
+            --exclude='node_modules/' \
+            --exclude='vendor/' \
+            --exclude='*.log' \
+            --exclude='*.sql' \
+            --exclude='*.zip' \
+            --exclude='*.tar.gz' \
+            --exclude='wp-config.php' \
+            --exclude='.env' \
+            -e "ssh -i ~/.ssh/deploy_key -p ${{ secrets.VPS_PORT }}" \
+            ./wp-content/ \
+            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/opt/sites/bythenology/html/wp-content/"
+
+      - name: Fix permissions and restart container
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "${{ secrets.VPS_PORT }}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" "
+            chown -R 33:33 /opt/sites/bythenology/html/wp-content &&
+            chmod -R 775 /opt/sites/bythenology/html/wp-content &&
+            docker restart bythenology-web
+          "
